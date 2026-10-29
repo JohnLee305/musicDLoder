@@ -1,0 +1,30 @@
+{
+  "release": "0.1.4",
+  "python_tests_passed": 11,
+  "typecheck": "passed",
+  "build": "passed",
+  "bundle_signature": "ad-hoc verified",
+  "bundle_external_links": 0,
+  "live_album_lookup": "Overgrown: 10 matching track IDs",
+  "live_audio_download": "short public test video succeeded",
+  "library_read_only": {
+    "albums": 45,
+    "tracks": 453
+  },
+  "ui_preview": "collection and album preview visually checked",
+  "native_app_launch": "blocked in agent environment: LaunchServices -10822",
+  "not_yet_verified": [
+    "Google sign-in inside Electron",
+    "YT Music playback inside Electron",
+    "end-to-end native IPC workflow",
+    "iPod playback and Cover Flow"
+  ],
+  "navigation_regression_tests_passed": 7,
+  "google_login": "Not yet verified with a user account; app-side redirect blocking corrected",
+  "packaged_tls_health": "passed; certificate verification enabled",
+  "packaged_live_album_lookup": "Overgrown: 10 track IDs and cover preview; release app worker passed",
+  "packaged_inspect_regression": "previous installed worker reproduced FileNotFoundError; fixed release worker succeeded",
+  "authentication_tests": "3 passed: domain and transport scope; memory-only cookies and anonymous default; no credentials in errors or manifests",
+  "authenticated_age_restricted_download": "Not verified with a real user account",
+  "coverflow": "Typecheck/build passed; browser UI test blocked by SIGABRT launching Chrome in agent environment; manual verification pending"
+}
