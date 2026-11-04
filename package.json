@@ -1,7 +1,7 @@
 {
   "name": "album-dock",
   "productName": "Album Dock",
-  "version": "0.1.4",
+  "version": "0.2.2",
   "private": true,
   "description": "A personal album workspace for iPod classic",
   "main": "dist/main.cjs",
@@ -10,7 +10,10 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "package": "node scripts/package.cjs",
-    "test:navigation": "node --test tests/navigation.test.cjs"
+    "test:navigation": "node --test tests/navigation.test.cjs",
+    "verify:bundle": "node scripts/verify-bundle.cjs",
+    "dmg": "node scripts/dmg.cjs",
+    "verify:dmg": "node scripts/verify-dmg.cjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

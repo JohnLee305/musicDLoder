@@ -1,0 +1,89 @@
+name: macOS installers
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      ALBUM_DOCK_ARCH: ${{ matrix.arch }}
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.arch }}
+          cache: pip
+          cache-dependency-path: worker/requirements.txt
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r worker/requirements.txt
+      - name: Validate source
+        run: |
+          npm run typecheck
+          npm run test:navigation
+          python -m unittest discover -s tests -v
+          npm run build
+      - name: Build native worker
+        run: python -m PyInstaller --noconfirm --distpath resources --workpath .build/worker worker/album-worker.spec
+      - name: Package and verify installer
+        run: |
+          npm run package
+          npm run dmg
+          npm run verify:dmg -- "release/Album-Dock-$(node -p 'require("./package.json").version')-macOS-${ALBUM_DOCK_ARCH}.dmg"
+      - name: Test packaged app with a fresh profile
+        run: node tests/smoke.cjs "release/Album Dock-darwin-${ALBUM_DOCK_ARCH}/Album Dock.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Album-Dock-macOS-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "$TAG" = "v$(node -p 'require("./package.json").version')"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Album-Dock-macOS-*
+          path: installers
+          merge-multiple: true
+      - name: Create draft preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" installers/* --verify-tag --draft --prerelease --title "Album Dock $TAG (preview)" --notes-file docs/INSTALL.md

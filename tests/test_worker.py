@@ -81,6 +81,60 @@ class WorkerTest(unittest.TestCase):
         result = self.run_job(); self.assertEqual(result['status'], 'done'); self.assertEqual(self.calls, 2)
         self.assertEqual(len(list(Path(result['path']).glob('*.mp3'))), 2)
 
+    def test_replacement_fills_missing_slot_and_keeps_album_metadata(self):
+        missing = {**self.album['tracks'][0], 'id': '', 'title': '누락된 곡', 'number': 2, 'available': False}
+        self.album['tracks'].append(missing)
+        first = self.run_job()
+        self.assertEqual(first['status'], 'partial')
+        existing = next(Path(first['path']).glob('*.mp3'))
+        before = existing.read_bytes()
+        self.request['replacements'] = {'1:2': 'lmnopqrstuv'}
+        seen = []
+        def replacement_source(track, *args):
+            seen.append(track['id'])
+            return self.source
+        result = self.run_job(replacement_source)
+        self.assertEqual(result['status'], 'done')
+        self.assertEqual(seen, ['lmnopqrstuv'])
+        self.assertEqual(existing.read_bytes(), before)
+        file = next(Path(result['path']).glob('02 *.mp3'))
+        tags = ID3(file)
+        self.assertEqual(str(tags['TIT2']), '누락된 곡')
+        self.assertEqual(str(tags['TALB']), self.album['title'])
+        self.assertEqual(str(tags['TPE2']), self.album['artist'])
+        self.assertEqual(str(tags['TRCK']), '2/2')
+        self.assertEqual(tags.getall('APIC')[0].data, self.cover)
+        self.assertEqual(missing['id'], '')
+        self.run_job(replacement_source)
+        self.assertEqual(seen, ['lmnopqrstuv'])
+
+    def test_fast_retry_reads_only_missing_audio_and_reuses_cover(self):
+        missing = {**self.album['tracks'][0], 'id': '', 'title': '누락된 곡', 'number': 2, 'available': False}
+        self.album['tracks'].append(missing)
+        first = self.run_job()
+        completed = next(Path(first['path']).glob('*.mp3'))
+        before = completed.read_bytes()
+        self.request.update(retryMissingOnly=True, replacements={'1:2': 'lmnopqrstuv'})
+        with patch.object(w, 'MP3', wraps=MP3) as parsed, contextlib.redirect_stdout(io.StringIO()):
+            result = w.download_album(self.request, self.source_fn, lambda _: self.fail('Cover must be cached'))
+        self.assertEqual(result['status'], 'done')
+        self.assertFalse(any(Path(c.args[0]) == completed for c in parsed.call_args_list))
+        self.assertEqual(completed.read_bytes(), before)
+        tags = ID3(next(Path(first['path']).glob('02 *.mp3')))
+        self.assertEqual(str(tags['TRCK']), '2/2')
+        with patch.object(w, 'MP3', side_effect=AssertionError('No audio scan')), contextlib.redirect_stdout(io.StringIO()):
+            result = w.download_album(self.request, lambda *a: self.fail('No download'), lambda _: self.fail('No cover fetch'))
+        self.assertEqual(result['status'], 'done')
+
+    def test_fast_retry_repairs_explicit_failed_slot(self):
+        first = self.run_job()
+        old_file = next(Path(first['path']).glob('*.mp3'))
+        before = old_file.read_bytes()
+        self.request.update(retryMissingOnly=True, repairSlots=['1:1'])
+        self.run_job()
+        self.assertEqual(self.calls, 2)
+        self.assertEqual(old_file.read_bytes(), before)
+
     def test_paths_and_symlinks(self):
         self.assertNotIn('/', w.component('../../가수/곡'))
         with self.assertRaises(ValueError): w.safe_child(self.root, '..', 'escape')

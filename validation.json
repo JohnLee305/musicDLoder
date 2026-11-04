@@ -1,6 +1,6 @@
 {
-  "release": "0.1.4",
-  "python_tests_passed": 11,
+  "release": "0.2.2",
+  "python_tests_passed": 14,
   "typecheck": "passed",
   "build": "passed",
   "bundle_signature": "ad-hoc verified",
@@ -19,12 +19,22 @@
     "end-to-end native IPC workflow",
     "iPod playback and Cover Flow"
   ],
-  "navigation_regression_tests_passed": 7,
+  "navigation_regression_tests_passed": 8,
   "google_login": "Not yet verified with a user account; app-side redirect blocking corrected",
   "packaged_tls_health": "passed; certificate verification enabled",
   "packaged_live_album_lookup": "Overgrown: 10 track IDs and cover preview; release app worker passed",
   "packaged_inspect_regression": "previous installed worker reproduced FileNotFoundError; fixed release worker succeeded",
   "authentication_tests": "3 passed: domain and transport scope; memory-only cookies and anonymous default; no credentials in errors or manifests",
   "authenticated_age_restricted_download": "Not verified with a real user account",
-  "coverflow": "Typecheck/build passed; browser UI test blocked by SIGABRT launching Chrome in agent environment; manual verification pending"
+  "coverflow": "Typecheck/build passed; browser UI test blocked by SIGABRT launching Chrome in agent environment; manual verification pending",
+  "replacement_tracks": "Synthetic audio test passed: original tags and cover preserved; successful track unchanged; repeated retry skips replacement",
+  "live_replacement_download": "Pending user-selected YouTube links",
+  "fast_retry": "Tests cover no completed-audio parsing, cached cover reuse, original album track count and explicit failed-slot repair",
+  "installer_pipeline": {
+    "local_intel_app": "Built, ad-hoc signature verified and installed as 0.2.2",
+    "local_dmg": "Blocked: hdiutil create failed (device not configured)",
+    "github_actions": "Configured; not run yet",
+    "apple_silicon": "Configured; build and runtime verification pending",
+    "apple_notarization": "Not configured; user chose test installers without Developer account"
+  }
 }

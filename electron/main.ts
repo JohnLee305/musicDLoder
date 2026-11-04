@@ -6,7 +6,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import type {State,Album,Job,LibraryAlbum} from '../src/types';
-import {browserURL,albumPage,validateAlbum} from './rules';
+import {browserURL,albumPage,validateAlbum,youtubeVideoId} from './rules';
 import {loadBrowserURL,blockedNavigationMessage} from './navigation';
 
 protocol.registerSchemesAsPrivileged([{scheme:'dock',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
@@ -59,7 +59,7 @@ async function nextJob(){
   try{
     const cookies=state.settings.useYouTubeLogin ? (await browser.webContents.session.cookies.get({domain:'youtube.com'})).filter(c=>{const d=(c.domain||'').replace(/^\./,'');return d==='youtube.com'||d.endsWith('.youtube.com');}) : [];
     if(job.status!=='running')return;
-    const result=await worker({command:'download',album:job.album,root:job.root,bitrate:job.bitrate,cookies},p=>{if(job.status!=='running')return;job.progress=Math.max(0,Math.min(1,Number(p.progress)||0));job.message=String(p.message||'');push();},job.id);
+    const result=await worker({command:'download',album:job.album,root:job.root,bitrate:job.bitrate,cookies,retryMissingOnly:job.retryMissingOnly===true,repairSlots:job.repairSlots||[],replacements:job.replacements||{}},p=>{if(job.status!=='running')return;job.progress=Math.max(0,Math.min(1,Number(p.progress)||0));job.message=String(p.message||'');push();},job.id);
     if(job.status==='running'){job.status=result.status;job.path=result.path;job.errors=result.errors;job.progress=1;job.message=result.status==='done'?'MP3와 앨범 커버 저장 완료':`${result.errors.length}곡을 확인해 주세요`;if(result.path)openedPaths.add(result.path);}
   }catch(e){if(job.status==='running'){job.status='failed';job.message=(e as Error).message;}}
   finally{activeJob=null;update();void nextJob();}
@@ -86,7 +86,14 @@ function register(){
     state.jobs.push({id:randomUUID(),album,root:state.settings.root,bitrate:state.settings.bitrate,status:'queued',progress:0,message:'대기 중',created:new Date().toISOString()});update();void nextJob();
   });
   handle('cancel',(id:string)=>{const job=state.jobs.find(j=>j.id===id);if(!job||!['queued','running'].includes(job.status))return;job.status='cancelled';job.message='취소됨 · 저장된 곡은 유지됩니다';const child=jobChildren.get(id);if(child)stopChild(child);update();});
-  handle('retry',(id:string)=>{const job=state.jobs.find(j=>j.id===id);if(!job||!['partial','failed','cancelled','interrupted'].includes(job.status))return;job.status='queued';job.progress=0;job.message='빠진 곡 다시 받기';job.errors=[];update();void nextJob();});
+  handle('replaceTrack',(id:string,disc:number,number:number,url:string)=>{
+    const job=state.jobs.find(j=>j.id===id);
+    if(!job||!['partial','failed','cancelled','interrupted'].includes(job.status))throw Error('중단되거나 미완료된 앨범에서만 곡을 지정할 수 있어요.');
+    if(!job.album.tracks.some(t=>t.disc===disc&&t.number===number)||typeof url!=='string'||url.length>3000)throw Error('수록곡과 링크를 확인해 주세요.');
+    const videoId=youtubeVideoId(url);
+    job.replacements={...job.replacements,[disc+':'+number]:videoId};update();
+  });
+  handle('retry',(id:string)=>{const job=state.jobs.find(j=>j.id===id);if(!job||!['partial','failed','cancelled','interrupted'].includes(job.status))return;job.retryMissingOnly=true;job.repairSlots=job.album.tracks.filter(t=>job.errors?.some(e=>e.startsWith(t.title+':'))).map(t=>t.disc+':'+t.number);job.status='queued';job.progress=0;job.message='미완료 곡만 다시 받기';job.errors=[];update();void nextJob();});
   handle('folder',async()=>{const result=await dialog.showOpenDialog(win,{title:'앨범을 저장할 음악 폴더',defaultPath:state.settings.root,properties:['openDirectory','createDirectory']});if(!result.canceled){state.settings.root=result.filePaths[0];update();}return state.settings.root;});
   handle('bitrate',(value:number)=>{if(![192,256,320].includes(value))throw Error('잘못된 설정');state.settings.bitrate=value;update();});
   handle('youtubeLogin',(value:boolean)=>{if(typeof value!=='boolean')throw Error('잘못된 설정');state.settings.useYouTubeLogin=value;update();});

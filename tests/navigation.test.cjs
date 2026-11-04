@@ -42,3 +42,9 @@ test('blocked-page diagnostics do not include authentication query strings',()=>
   const message=blockedNavigationMessage('https://external.invalid/callback?code=secret-value');
   assert(message.includes('external.invalid'));assert(!message.includes('secret-value'));assert(!message.includes('callback'));
 });
+
+test('replacement links accept only canonical YouTube video URLs',()=>{
+  const {youtubeVideoId}=compile('rules.ts');
+  for(const url of ['https://youtu.be/abcdefghijk?t=5','https://www.youtube.com/watch?v=abcdefghijk&list=other','https://m.youtube.com/shorts/abcdefghijk'])assert.equal(youtubeVideoId(url),'abcdefghijk');
+  for(const url of ['http://youtu.be/abcdefghijk','https://youtube.com.evil.test/watch?v=abcdefghijk','https://user:pass@youtube.com/watch?v=abcdefghijk','https://youtu.be/short','https://youtube.com/playlist?list=abcdefghijk'])assert.throws(()=>youtubeVideoId(url));
+});

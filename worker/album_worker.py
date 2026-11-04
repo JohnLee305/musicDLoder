@@ -249,9 +249,23 @@ def download_album(request, downloader=download_source, cover_loader=fetch_cover
     manifest = read_manifest(manifest_path)
     manifest.update(id=album['id'], title=album['title'], artist=album['artist'])
     manifest.setdefault('files', {})
-    emit('progress', progress=0, message='앨범 커버 준비 중')
-    cover = cover_loader(album['cover'])
+    retry_only = request.get('retryMissingOnly') is True
+    repair_slots = set(request.get('repairSlots', []))
+    tracks = album['tracks']
+    if retry_only:
+        pending = []
+        for track in tracks:
+            slot = f"{track.get('disc', 1)}:{track['number']}"
+            key = f"{slot}:{track['id']}"
+            filename = manifest['files'].get(key)
+            if slot in repair_slots or not filename or not safe_child(root, destination.relative_to(root), filename).is_file():
+                pending.append(track)
+        tracks = pending
+        if not tracks:
+            return {'path': str(destination), 'errors': [], 'status': 'done'}
+    emit('progress', progress=0, message=f"{len(tracks)}곡 준비 중" if retry_only else '앨범 커버 준비 중')
     cover_path = safe_child(root, destination.relative_to(root), 'cover.jpg')
+    cover = cover_path.read_bytes() if retry_only and cover_path.is_file() else cover_loader(album['cover'])
     if not cover_path.exists():
         with open(cover_path, 'xb') as handle:
             handle.write(cover)
@@ -259,18 +273,21 @@ def download_album(request, downloader=download_source, cover_loader=fetch_cover
     errors = []
     work = safe_child(root, '.albumdock-work')
     work.mkdir(exist_ok=True)
-    for index, track in enumerate(album['tracks']):
+    for index, track in enumerate(tracks):
         key = f"{track.get('disc', 1)}:{track['number']}:{track['id']}"
         existing = manifest['files'].get(key)
-        if existing:
+        if existing and not (retry_only and f"{track.get('disc', 1)}:{track['number']}" in repair_slots):
             old_path = safe_child(root, destination.relative_to(root), existing)
             try:
                 if MP3(old_path).info.length > 0:
-                    emit('progress', progress=(index + 1) / len(album['tracks']), message=f"이미 저장됨 · {track['title']}")
+                    emit('progress', progress=(index + 1) / len(tracks), message=f"이미 저장됨 · {track['title']}")
                     continue
             except Exception:
                 pass
-        if not track.get('available'):
+        replacement = request.get('replacements', {}).get(f"{track.get('disc', 1)}:{track['number']}")
+        if replacement and not re.fullmatch(r'[A-Za-z0-9_-]{11}', replacement):
+            raise ValueError('잘못된 대체 영상 ID입니다.')
+        if not track.get('available') and not replacement:
             errors.append(f"{track['title']}: 제공되지 않는 곡")
             continue
         try:
@@ -279,9 +296,10 @@ def download_album(request, downloader=download_source, cover_loader=fetch_cover
                 def progress(info):
                     total = info.get('total_bytes') or info.get('total_bytes_estimate') or 1
                     ratio = min(0.9, info.get('downloaded_bytes', 0) / total * 0.9)
-                    emit('progress', progress=(index + ratio) / len(album['tracks']), message=f"{index + 1}/{len(album['tracks'])} · {track['title']}")
-                source = downloader(track, stage, request.get('node'), progress)
-                emit('progress', progress=(index + .92) / len(album['tracks']), message=f"MP3 변환 · {track['title']}")
+                    emit('progress', progress=(index + ratio) / len(tracks), message=f"{index + 1}/{len(tracks)} · {track['title']}")
+                source_track = dict(track, id=replacement) if replacement else track
+                source = downloader(source_track, stage, request.get('node'), progress)
+                emit('progress', progress=(index + .92) / len(tracks), message=f"MP3 변환 · {track['title']}")
                 result = stage / 'result.mp3'
                 encode_track(source, result, album, track, cover, bitrate)
                 disc = f"{track.get('disc', 1)}-" if any(t.get('disc', 1) > 1 for t in album['tracks']) else ''
@@ -305,7 +323,7 @@ def download_album(request, downloader=download_source, cover_loader=fetch_cover
             elif request.get('cookies'):
                 message = '로그인을 사용한 다운로드에 실패했습니다. 앱에서 곡 재생과 로그인 상태를 확인한 뒤 다시 시도해 주세요.'
             errors.append(f"{track['title']}: {message[-700:]}")
-        emit('progress', progress=(index + 1) / len(album['tracks']), message=f"{index + 1}/{len(album['tracks'])}곡 처리")
+        emit('progress', progress=(index + 1) / len(tracks), message=f"{index + 1}/{len(tracks)}곡 처리")
     return {'path': str(destination), 'errors': errors,
             'status': 'partial' if errors and manifest['files'] else 'failed' if errors else 'done'}
 
